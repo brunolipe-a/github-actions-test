@@ -14,7 +14,8 @@ jobs:
         with: { fetch-depth: 0 }
 
       # Garante develop atualizado localmente
-      - run: git fetch origin develop:develop
+      - run: git fetch --prune origin
+      - run: git checkout -B release/tmp origin/develop
 
       # Cria branch de release a partir do develop
       - name: Create release branch from develop
