@@ -1,0 +1,29 @@
+# .github/workflows/open-sync-pr.yml
+name: Open back-merge PR master→develop
+on:
+  push:
+    branches: [master]
+  workflow_dispatch: {}
+
+jobs:
+  open-pr:
+    permissions:
+      contents: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    concurrency:
+      group: sync-master-to-develop
+      cancel-in-progress: false
+    steps:
+      - name: Open PR from master to develop
+        uses: repo-sync/pull-request@v2
+        with:
+          source_branch: "master"
+          destination_branch: "develop"
+          pr_title: "chore(sync): back-merge master → develop"
+          pr_body: |
+            PR automática de sincronização após merge na **master**.
+            - Verificar conflitos
+            - Conferir versão/changelog
+            - Rodar testes
+          pr_label: "sync,chore"
