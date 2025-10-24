@@ -1,6 +1,7 @@
 name: Open Release PR (develop → master, RP-style)
+
 on:
-  workflow_dispatch: {} # você escolhe a hora
+  workflow_dispatch: {}
 
 permissions:
   contents: write
@@ -10,20 +11,31 @@ jobs:
   open_release_pr:
     runs-on: ubuntu-latest
     steps:
+      # 1) Checkout em master e com histórico/tags completos
       - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
+        with:
+          fetch-depth: 0
+          ref: master
 
-      # Garante develop atualizado localmente
-      - run: git fetch --prune origin
-      - run: git checkout -B release/tmp origin/develop
-
-      # Cria branch de release a partir do develop
-      - name: Create release branch from develop
+      - name: Fetch remotes & tags
         run: |
-          git checkout -B release/tmp origin/develop
+          git fetch --prune origin
+          git fetch --tags origin
 
-      # Gera CHANGELOG e calcula a próxima versão (SemVer) SEM criar tag
-      # (usa Conventional Commits; ajusta package.json/pyproject/etc. se existir)
+      # 2) Captura a ÚLTIMA TAG existente (para montar o compare link)
+      - name: Get latest tag
+        id: latest
+        uses: actions-ecosystem/action-get-latest-tag@v1
+        with:
+          semver_only: true
+
+      # 3) Cria uma branch de trabalho baseada em develop (não use o nome final ainda)
+      - name: Create temp release branch from develop
+        run: |
+          git checkout -B release/work origin/develop
+
+      # 4) Gera CHANGELOG + bump (SemVer) SEM criar tag
+      #    -> Usa Conventional Commits e comita CHANGELOG/versão na branch atual
       - name: Generate changelog (no tag)
         id: changelog
         uses: TriPSs/conventional-changelog-action@v6
@@ -31,37 +43,26 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           output-file: "CHANGELOG.md"
           tag-prefix: "v"
-          skip-tag: "true" # não criar tag agora
-          skip-commit: "false" # commitar CHANGELOG + version bump
+          skip-tag: "true" # não cria tag agora
+          skip-commit: "false" # commita CHANGELOG + version bump
           git-message: "chore(release): {version}"
-          # se usa outro arquivo de versão, configure:
-          # version-file: "pyproject.toml,package.json"
-          # version-path: "tool.poetry.version,version"
 
-      # Renomeia a branch para o padrão release/x.y.z
-      - name: Rename release branch with version
-        run: |
-          ver="${{ steps.changelog.outputs.version }}"
-          git branch -m release/tmp "release/${ver}"
-
-      # Abre PR release/x.y.z -> master com título/corpo no estilo release-please
-      - name: Create PR (RP-like)
+      # 5) Abre a PR release/x.y.z → master com o "jeitão" do release-please
+      - name: Create PR
         uses: peter-evans/create-pull-request@v7
         with:
+          # A action cria/pusha a branch remota com esse nome automaticamente
           branch: "release/${{ steps.changelog.outputs.version }}"
           base: "master"
           title: "chore(master): release ${{ steps.changelog.outputs.version }}"
           labels: "release,autorelease: pending"
           body: |
             :robot: I have created a release *beep* *boop*
-            ---
+
             ## [${{ steps.changelog.outputs.version }}](
-            https://github.com/${{ github.repository }}/compare/$(git describe --tags --abbrev=0 2>/dev/null || echo v0.0.0)...v${{ steps.changelog.outputs.version }}) ({{ env.TODAY }})
+            https://github.com/${{ github.repository }}/compare/${{ steps.latest.outputs.tag && steps.latest.outputs.tag != '' && startsWith(steps.latest.outputs.tag, 'v') && steps.latest.outputs.tag || 'v0.0.0' }}...v${{ steps.changelog.outputs.version }})
 
             ${{ steps.changelog.outputs.clean_changelog }}
 
             ---
-            This PR was generated with a Release-Please-style workflow. See
-            [Release Please docs](https://github.com/googleapis/release-please).
-        env:
-          TODAY: ${{ github.event.repository.updated_at || '' }}
+            This PR was generated with a Release-Please-style workflow.
