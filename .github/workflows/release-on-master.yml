@@ -1,4 +1,4 @@
-name: release-please
+name: prepare-release
 on:
   workflow_dispatch: {}
 
@@ -7,11 +7,88 @@ permissions:
   pull-requests: write
 
 jobs:
-  release:
+  prepare:
+    name: Create release branch and PR
     runs-on: ubuntu-latest
     steps:
-      - uses: googleapis/release-please-action@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
-          target-branch: master
-          release-type: simple
-          config-file: ./.github/files/.release-please-config.json
+          fetch-depth: 0
+
+      - name: Fetch refs
+        run: |
+          git fetch --prune --tags origin "+refs/heads/*:refs/remotes/origin/*"
+
+      - name: Compute next version from develop vs master
+        id: compute
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Última tag alcançável a partir da master (ou 0.0.0 se não houver)
+          LAST_TAG=$(git tag --merged origin/master --sort=-creatordate | head -n1)
+          if [[ -z "$LAST_TAG" ]]; then LAST_TAG="v0.0.0"; fi
+
+          # Commits entre master..develop
+          MAPFILE -t COMMITS < <(git log --pretty=%s origin/master..origin/develop)
+          if [[ ${#COMMITS[@]} -eq 0 ]]; then
+            echo "::warning::Sem commits novos entre master e develop; nada a liberar." >&2
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          bump="patch"
+          for msg in "${COMMITS[@]}"; do
+            if [[ "$msg" =~ BREAKING[[:space:]]CHANGE ]] || [[ "$msg" =~ ^([a-zA-Z]+)(\(.+\))?!: ]]; then
+              bump="major"; break
+            elif [[ "$msg" =~ ^feat(\(.+\))?: ]]; then
+              bump="minor"
+            elif [[ "$msg" =~ ^fix(\(.+\))?: ]]; then
+              if [[ "$bump" != "minor" ]]; then bump="patch"; fi
+            fi
+          done
+
+          # Parse semver from LAST_TAG (strip leading v)
+          base=${LAST_TAG#v}
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$base"
+          : "${MAJOR:=0}"; : "${MINOR:=0}"; : "${PATCH:=0}"
+
+          case "$bump" in
+            major) NEW_MAJOR=$((MAJOR+1)); NEW_MINOR=0; NEW_PATCH=0 ;;
+            minor) NEW_MAJOR=$MAJOR; NEW_MINOR=$((MINOR+1)); NEW_PATCH=0 ;;
+            patch) NEW_MAJOR=$MAJOR; NEW_MINOR=$MINOR; NEW_PATCH=$((PATCH+1)) ;;
+          esac
+
+          NEW_VERSION="${NEW_MAJOR}.${NEW_MINOR}.${NEW_PATCH}"
+          RELEASE_BRANCH="release/v${NEW_VERSION}"
+
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "last_tag=$LAST_TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "branch=$RELEASE_BRANCH" >> "$GITHUB_OUTPUT"
+
+          echo "Base: $LAST_TAG; bump: $bump; next: $NEW_VERSION"
+
+      - name: Create and push release branch
+        if: steps.compute.outputs.changed == 'true'
+        env:
+          BRANCH_NAME: ${{ steps.compute.outputs.branch }}
+        run: |
+          set -euo pipefail
+          git checkout -b "$BRANCH_NAME" origin/develop
+          git push -u origin "$BRANCH_NAME"
+
+      - name: Open PR release → master
+        if: steps.compute.outputs.changed == 'true'
+        uses: repo-sync/pull-request@v2
+        with:
+          source_branch: ${{ steps.compute.outputs.branch }}
+          destination_branch: master
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          pr_title: "chore(release): v${{ steps.compute.outputs.version }}"
+          pr_body: |
+            Preparando release v${{ steps.compute.outputs.version }} a partir do develop.
+            Commits incluídos desde ${{ steps.compute.outputs.last_tag }}:
+            Consulte o diff: compare master..${{ steps.compute.outputs.branch }}
+          pr_label: release
