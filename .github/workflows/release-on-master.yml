@@ -31,7 +31,7 @@ jobs:
           if [[ -z "$LAST_TAG" ]]; then LAST_TAG="v0.0.0"; fi
 
           # Commits entre master..develop
-          MAPFILE -t COMMITS < <(git log --pretty=%s origin/master..origin/develop)
+          mapfile -t COMMITS < <(git log --pretty=%s origin/master..origin/develop)
           if [[ ${#COMMITS[@]} -eq 0 ]]; then
             echo "::warning::Sem commits novos entre master e develop; nada a liberar." >&2
             echo "changed=false" >> "$GITHUB_OUTPUT"
