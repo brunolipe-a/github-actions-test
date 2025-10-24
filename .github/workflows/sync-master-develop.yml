@@ -1,0 +1,38 @@
+# .github/workflows/sync-master-develop.yml
+name: Sync master → develop
+on:
+  push:
+    branches: [master]
+permissions:
+  contents: write
+  pull-requests: write
+jobs:
+  open_sync_pr:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - run: git fetch origin develop:develop || true
+      - name: Check diff
+        id: diff
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const res = await github.rest.repos.compareCommits({
+              owner: context.repo.owner, repo: context.repo.repo, base: 'develop', head: 'master'
+            });
+            core.setOutput('ahead_by', res.data.ahead_by);
+      - name: Prepare sync branch
+        if: steps.diff.outputs.ahead_by != '0'
+        run: |
+          git checkout -B sync/master-to-develop origin/develop
+          git pull --no-edit origin master
+      - name: Create PR master → develop
+        if: steps.diff.outputs.ahead_by != '0'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          title: "chore(sync): master → develop"
+          body: "PR automática de sincronização após mudanças em **master**."
+          base: develop
+          branch: sync/master-to-develop
+          labels: sync, chore

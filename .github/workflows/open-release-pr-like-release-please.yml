@@ -1,0 +1,66 @@
+name: Open Release PR (develop → master, RP-style)
+on:
+  workflow_dispatch: {} # você escolhe a hora
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  open_release_pr:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      # Garante develop atualizado localmente
+      - run: git fetch origin develop:develop
+
+      # Cria branch de release a partir do develop
+      - name: Create release branch from develop
+        run: |
+          git checkout -B release/tmp origin/develop
+
+      # Gera CHANGELOG e calcula a próxima versão (SemVer) SEM criar tag
+      # (usa Conventional Commits; ajusta package.json/pyproject/etc. se existir)
+      - name: Generate changelog (no tag)
+        id: changelog
+        uses: TriPSs/conventional-changelog-action@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          output-file: "CHANGELOG.md"
+          tag-prefix: "v"
+          skip-tag: "true" # não criar tag agora
+          skip-commit: "false" # commitar CHANGELOG + version bump
+          git-message: "chore(release): {version}"
+          # se usa outro arquivo de versão, configure:
+          # version-file: "pyproject.toml,package.json"
+          # version-path: "tool.poetry.version,version"
+
+      # Renomeia a branch para o padrão release/x.y.z
+      - name: Rename release branch with version
+        run: |
+          ver="${{ steps.changelog.outputs.version }}"
+          git branch -m release/tmp "release/${ver}"
+
+      # Abre PR release/x.y.z -> master com título/corpo no estilo release-please
+      - name: Create PR (RP-like)
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: "release/${{ steps.changelog.outputs.version }}"
+          base: "master"
+          title: "chore(master): release ${{ steps.changelog.outputs.version }}"
+          labels: "release,autorelease: pending"
+          body: |
+            :robot: I have created a release *beep* *boop*
+            ---
+            ## [${{ steps.changelog.outputs.version }}](
+            https://github.com/${{ github.repository }}/compare/$(git describe --tags --abbrev=0 2>/dev/null || echo v0.0.0)...v${{ steps.changelog.outputs.version }}) ({{ env.TODAY }})
+
+            ${{ steps.changelog.outputs.clean_changelog }}
+
+            ---
+            This PR was generated with a Release-Please-style workflow. See
+            [Release Please docs](https://github.com/googleapis/release-please).
+        env:
+          TODAY: ${{ github.event.repository.updated_at || '' }}
