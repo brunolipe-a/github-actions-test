@@ -1,38 +1,59 @@
-# .github/workflows/sync-master-develop.yml
 name: Sync master → develop
+
 on:
   push:
     branches: [master]
+
 permissions:
-  contents: write
   pull-requests: write
+  issues: write # só se quiser adicionar labels (opcional)
+
 jobs:
   open_sync_pr:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
-      - run: git fetch origin develop:develop || true
-      - name: Check diff
+      - name: Check diff (master..develop)
         id: diff
         uses: actions/github-script@v7
         with:
           script: |
-            const res = await github.rest.repos.compareCommits({
-              owner: context.repo.owner, repo: context.repo.repo, base: 'develop', head: 'master'
+            const { owner, repo } = context.repo;
+            const cmp = await github.rest.repos.compareCommits({
+              owner, repo, base: 'develop', head: 'master'
             });
-            core.setOutput('ahead_by', res.data.ahead_by);
-      - name: Prepare sync branch
+            core.setOutput('ahead_by', String(cmp.data.ahead_by));
+
+      - name: Open PR master → develop (only if there is diff)
         if: steps.diff.outputs.ahead_by != '0'
-        run: |
-          git checkout -B sync/master-to-develop origin/develop
-          git pull --no-edit origin master
-      - name: Create PR master → develop
-        if: steps.diff.outputs.ahead_by != '0'
-        uses: peter-evans/create-pull-request@v7
+        uses: actions/github-script@v7
         with:
-          title: "chore(sync): master → develop"
-          body: "PR automática de sincronização após mudanças em **master**."
-          base: develop
-          branch: sync/master-to-develop
-          labels: sync, chore
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { owner, repo } = context.repo;
+
+            // evita duplicar PR se já existir uma aberta de master->develop
+            const existing = await github.rest.pulls.list({
+              owner, repo, state: 'open', head: `${owner}:master`, base: 'develop'
+            });
+            if (existing.data.length) {
+              core.info(`PR já existe: #${existing.data[0].number}`);
+              return;
+            }
+
+            const { data: pr } = await github.rest.pulls.create({
+              owner, repo,
+              title: 'chore(sync): master → develop',
+              head: 'master',
+              base: 'develop',
+              body: 'PR automática de sincronização após mudanças em **master**.'
+            });
+
+            // opcional: labels
+            try {
+              await github.rest.issues.addLabels({
+                owner, repo, issue_number: pr.number,
+                labels: ['sync','chore']
+              });
+            } catch (e) {
+              core.warning(`Falha ao adicionar labels: ${e.message}`);
+            }
