@@ -14,6 +14,6 @@ jobs:
     steps:
       - uses: googleapis/release-please-action@v4
         with:
-          target-branch: develop
+          target-branch: master
           release-type: simple
-          config-file: ./.github/files/release-please-config.json
+          config-file: ./.github/files/.release-please-config.json
