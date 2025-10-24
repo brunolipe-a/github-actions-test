@@ -1,7 +1,5 @@
 name: release-please
 on:
-  push:
-    branches: [master] # ou main
   workflow_dispatch: {}
 
 permissions:
