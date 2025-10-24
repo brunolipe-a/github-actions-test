@@ -11,7 +11,7 @@ jobs:
   open_release_pr:
     runs-on: ubuntu-latest
     steps:
-      # 1) Checkout em master e com histórico/tags completos
+      # Checkout fora do develop e com histórico completo
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -22,37 +22,39 @@ jobs:
           git fetch --prune origin
           git fetch --tags origin
 
-      # 2) Captura a ÚLTIMA TAG existente (para montar o compare link)
+      # Última tag (para montar o compare link)
       - name: Get latest tag
         id: latest
         uses: actions-ecosystem/action-get-latest-tag@v1
         with:
           semver_only: true
 
-      # 3) Cria uma branch de trabalho baseada em develop (não use o nome final ainda)
+      # Cria branch de trabalho baseada em develop (local)
       - name: Create temp release branch from develop
         run: |
           git checkout -B release/work origin/develop
 
-      # 4) Gera CHANGELOG + bump (SemVer) SEM criar tag
-      #    -> Usa Conventional Commits e comita CHANGELOG/versão na branch atual
-      - name: Generate changelog (no tag)
+      # Gera CHANGELOG + calcula próxima versão (SemVer) SEM criar tag
+      # Importante: 1) comitar na branch release/work; 2) NÃO tentar ler/bumpar package.json
+      - name: Generate changelog (no version file / no tag)
         id: changelog
         uses: TriPSs/conventional-changelog-action@v6
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           output-file: "CHANGELOG.md"
           tag-prefix: "v"
-          skip-tag: "true" # não cria tag agora
-          skip-commit: "false" # commita CHANGELOG + version bump
           git-message: "chore(release): {version}"
+          git-branch: "release/work" # envia commits para release/work (default seria ${{ github.ref }})
+          skip-tag: "true" # não cria tag agora
+          skip-commit: "false" # queremos o commit do CHANGELOG
+          skip-git-pull: "true"
+          skip-version-file: "true" # <<< evita procurar package.json (ou outro arquivo de versão)
 
-      # 5) Abre a PR release/x.y.z → master com o "jeitão" do release-please
-      - name: Create PR
+      # Abre PR release/x.y.z → master com "cara" de release-please
+      - name: Create PR (RP-like body)
         uses: peter-evans/create-pull-request@v7
         with:
-          # A action cria/pusha a branch remota com esse nome automaticamente
-          branch: "release/${{ steps.changelog.outputs.version }}"
+          branch: "release/${{ steps.changelog.outputs.version }}" # a action cria/pusha essa branch remota
           base: "master"
           title: "chore(master): release ${{ steps.changelog.outputs.version }}"
           labels: "release,autorelease: pending"
@@ -60,7 +62,7 @@ jobs:
             :robot: I have created a release *beep* *boop*
 
             ## [${{ steps.changelog.outputs.version }}](
-            https://github.com/${{ github.repository }}/compare/${{ steps.latest.outputs.tag && steps.latest.outputs.tag != '' && startsWith(steps.latest.outputs.tag, 'v') && steps.latest.outputs.tag || 'v0.0.0' }}...v${{ steps.changelog.outputs.version }})
+            https://github.com/${{ github.repository }}/compare/${{ steps.latest.outputs.tag && startsWith(steps.latest.outputs.tag, 'v') && steps.latest.outputs.tag || 'v0.0.0' }}...v${{ steps.changelog.outputs.version }})
 
             ${{ steps.changelog.outputs.clean_changelog }}
 
