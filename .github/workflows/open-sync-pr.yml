@@ -25,6 +25,7 @@ jobs:
           source_branch: "master"
           destination_branch: "develop"
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          pr_allow_empty: true
           pr_title: "chore(sync): back-merge master → develop"
           pr_body: |
             PR automática de sincronização após merge na **master**.
