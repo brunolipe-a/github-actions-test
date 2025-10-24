@@ -14,14 +14,6 @@ jobs:
     steps:
       - uses: googleapis/release-please-action@v4
         with:
-          release-type: simple # node, java, python, go, rust, etc. se preferir
-          bump-minor-pre-major: true # (opcional) antes de v1.0.0, feat => minor
-          changelog-types: |
-            [
-              {"type":"feat","section":"Features","hidden":false},
-              {"type":"fix","section":"Bug Fixes","hidden":false},
-              {"type":"docs","section":"Docs","hidden":false},
-              {"type":"refactor","section":"Refactors","hidden":false},
-              {"type":"perf","section":"Performance","hidden":false},
-              {"type":"chore","section":"Chores","hidden":false}
-            ]
+          target-branch: master
+          release-type: simple
+          config-file: ./.github/files/release-please-config.json
